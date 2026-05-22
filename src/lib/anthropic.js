@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 const STORAGE_KEY = 'anthropic_api_key'
-const MODEL = 'claude-sonnet-4-20250514'
+const MODEL = 'claude-sonnet-4-6'
 const PROMPT =
   'This is a handwritten journal page. Please transcribe all handwritten text exactly as written, preserving paragraph breaks. Return only the transcribed text, nothing else.'
 
