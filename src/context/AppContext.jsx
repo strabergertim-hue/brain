@@ -56,6 +56,9 @@ export function AppProvider({ children }) {
         : [...s.sleepLog, entry],
     }))
 
+  const deleteSleepEntry = (date) =>
+    setState(s => ({ ...s, sleepLog: s.sleepLog.filter(l => l.date !== date) }))
+
   const addFocusSession = (session) =>
     setState(s => ({ ...s, focusSessions: [{ ...session, id: Date.now() }, ...s.focusSessions] }))
 
@@ -66,7 +69,7 @@ export function AppProvider({ children }) {
     setState(s => ({ ...s, journalEntries: [{ ...entry, id: Date.now() }, ...s.journalEntries] }))
 
   return (
-    <AppContext.Provider value={{ state, addSleepEntry, upsertSleepEntry, addFocusSession, addMovementEntry, addJournalEntry }}>
+    <AppContext.Provider value={{ state, addSleepEntry, upsertSleepEntry, deleteSleepEntry, addFocusSession, addMovementEntry, addJournalEntry }}>
       {children}
     </AppContext.Provider>
   )
