@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext'
 import ScoreRing from '../components/ScoreRing'
 import {
   TrendingUp, Star, AlertTriangle, Flame, Moon, Target,
-  Activity, Brain, ChevronRight, CheckCircle2
+  Activity, Brain, ChevronRight, CheckCircle2, Wind
 } from 'lucide-react'
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
@@ -36,9 +36,9 @@ const scoreRoutes = {
 }
 
 const hints = [
-  { icon: Moon,     color: 'text-indigo-400',  bg: 'bg-indigo-500/10', text: 'Dein Schlaf war die letzten 2 Nächte unter 7h. Probiere 30 min früher ins Bett zu gehen.' },
-  { icon: Activity, color: 'text-green-400',   bg: 'bg-green-500/10',  text: 'Heute noch keine Bewegung erfasst. 10 Minuten Spaziergang verbessern die Kognition.' },
-  { icon: Target,   color: 'text-cyan-400',    bg: 'bg-cyan-500/10',   text: 'Stressresistenz ist dein schwächster Bereich. Probiere heute eine 5-Min-Atemübung.' },
+  { icon: Moon,     color: 'text-indigo-400', bg: 'bg-indigo-500/10', route: '/sleep',    text: 'Dein Schlaf war die letzten 2 Nächte unter 7h. Probiere 30 min früher ins Bett zu gehen.' },
+  { icon: Activity, color: 'text-green-400',  bg: 'bg-green-500/10',  route: '/movement', text: 'Heute noch keine Bewegung erfasst. 10 Minuten Spaziergang verbessern die Kognition.' },
+  { icon: Wind,     color: 'text-teal-400',   bg: 'bg-teal-500/10',   route: '/stress',   text: 'Stressresistenz ist dein schwächster Bereich. Probiere heute eine 5-Min-Atemübung.' },
 ]
 
 export default function Dashboard() {
@@ -144,8 +144,12 @@ export default function Dashboard() {
           Empfehlungen für heute
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {hints.map(({ icon: Icon, color, bg, text }, i) => (
-            <div key={i} className={`flex items-start gap-3 p-4 rounded-xl ${bg} border border-white/5`}>
+          {hints.map(({ icon: Icon, color, bg, route, text }, i) => (
+            <div
+              key={i}
+              onClick={() => navigate(route)}
+              className={`flex items-start gap-3 p-4 rounded-xl ${bg} border border-transparent hover:border-white/15 cursor-pointer transition-all`}
+            >
               <Icon size={18} className={`${color} flex-shrink-0 mt-0.5`} />
               <p className="text-sm text-slate-300">{text}</p>
             </div>
