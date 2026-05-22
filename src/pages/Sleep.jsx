@@ -32,14 +32,20 @@ const CustomTooltip = ({ active, payload }) => {
   )
 }
 
+const emptyForm = () => ({ date: new Date().toISOString().split('T')[0], hours: '', quality: 4 })
+
 export default function Sleep() {
-  const { state, addSleepEntry } = useApp()
-  const [form, setForm] = useState({ date: new Date().toISOString().split('T')[0], hours: '', quality: 4 })
+  const { state, upsertSleepEntry } = useApp()
+  const [form, setForm] = useState(emptyForm)
   const [showForm, setShowForm] = useState(false)
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false)
 
   const logs = state.sleepLog
+
+  // Datum als eindeutiger Schlüssel → kein Tooltip-Bug bei gleichen Wochentagen
   const chartData = logs.map(l => ({
-    day: dayNames[new Date(l.date).getDay()],
+    date: l.date,
+    label: (() => { const d = new Date(l.date); return `${d.getDate()}.${d.getMonth() + 1}.` })(),
     hours: l.hours,
     quality: l.quality,
   }))
@@ -47,10 +53,20 @@ export default function Sleep() {
   const avg = logs.length ? (logs.reduce((a, b) => a + b.hours, 0) / logs.length).toFixed(1) : '–'
   const avgQ = logs.length ? (logs.reduce((a, b) => a + b.quality, 0) / logs.length).toFixed(1) : '–'
 
+  const dateExists = logs.some(l => l.date === form.date)
+
   const handleAdd = () => {
     if (!form.hours) return
-    addSleepEntry({ ...form, hours: parseFloat(form.hours) })
-    setForm({ date: new Date().toISOString().split('T')[0], hours: '', quality: 4 })
+    if (dateExists) { setConfirmOverwrite(true); return }
+    upsertSleepEntry({ ...form, hours: parseFloat(form.hours) })
+    setForm(emptyForm)
+    setShowForm(false)
+  }
+
+  const handleConfirmOverwrite = () => {
+    upsertSleepEntry({ ...form, hours: parseFloat(form.hours) })
+    setForm(emptyForm)
+    setConfirmOverwrite(false)
     setShowForm(false)
   }
 
@@ -79,7 +95,7 @@ export default function Sleep() {
         </h2>
         <ResponsiveContainer width="100%" height={180}>
           <BarChart data={chartData} barSize={28}>
-            <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+            <XAxis dataKey="date" tickFormatter={d => { const dt = new Date(d); return `${dt.getDate()}.${dt.getMonth()+1}.` }} tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
             <YAxis domain={[0, 10]} tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} width={28} />
             <Tooltip content={<CustomTooltip />} />
             <ReferenceLine y={8} stroke="#6366f1" strokeDasharray="4 2" strokeOpacity={0.5} />
@@ -120,9 +136,25 @@ export default function Sleep() {
               <label className="text-xs text-slate-400 block mb-1.5">Schlafqualität</label>
               <QualityStars value={form.quality} onChange={q => setForm(f => ({ ...f, quality: q }))} />
             </div>
-            <button onClick={handleAdd} className="w-full py-2 rounded-xl gradient-purple text-white text-sm font-medium">
-              Speichern
-            </button>
+            {confirmOverwrite ? (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                <p className="text-sm text-amber-200">
+                  Für den <span className="font-semibold">{form.date}</span> existiert bereits ein Eintrag. Überschreiben?
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => setConfirmOverwrite(false)} className="flex-1 py-2 rounded-xl bg-white/5 text-slate-300 text-sm hover:bg-white/10">
+                    Abbrechen
+                  </button>
+                  <button onClick={handleConfirmOverwrite} className="flex-1 py-2 rounded-xl gradient-amber text-white text-sm font-medium">
+                    Überschreiben
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={handleAdd} className="w-full py-2 rounded-xl gradient-purple text-white text-sm font-medium">
+                Speichern
+              </button>
+            )}
           </div>
         )}
 

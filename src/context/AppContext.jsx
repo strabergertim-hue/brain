@@ -48,6 +48,14 @@ export function AppProvider({ children }) {
   const addSleepEntry = (entry) =>
     setState(s => ({ ...s, sleepLog: [...s.sleepLog, entry] }))
 
+  const upsertSleepEntry = (entry) =>
+    setState(s => ({
+      ...s,
+      sleepLog: s.sleepLog.some(l => l.date === entry.date)
+        ? s.sleepLog.map(l => l.date === entry.date ? entry : l)
+        : [...s.sleepLog, entry],
+    }))
+
   const addFocusSession = (session) =>
     setState(s => ({ ...s, focusSessions: [{ ...session, id: Date.now() }, ...s.focusSessions] }))
 
@@ -58,7 +66,7 @@ export function AppProvider({ children }) {
     setState(s => ({ ...s, journalEntries: [{ ...entry, id: Date.now() }, ...s.journalEntries] }))
 
   return (
-    <AppContext.Provider value={{ state, addSleepEntry, addFocusSession, addMovementEntry, addJournalEntry }}>
+    <AppContext.Provider value={{ state, addSleepEntry, upsertSleepEntry, addFocusSession, addMovementEntry, addJournalEntry }}>
       {children}
     </AppContext.Provider>
   )
