@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../context/AppContext'
-import { Wind, Plus, Smile, Meh, Frown, Heart } from 'lucide-react'
+import {
+  Wind, Plus, Smile, Meh, Frown, Heart,
+  Camera, ImagePlus, Sparkles, Loader2, X, Key,
+} from 'lucide-react'
+import {
+  transcribeHandwriting, getApiKey, setApiKey as saveApiKey,
+  maskApiKey, fileToDataUrl, ERR_NO_KEY,
+} from '../lib/anthropic'
 
 // ─── Breathing Exercise ──────────────────────────────────────────────────
 function BreathingExercise({ pattern }) {
@@ -104,10 +111,98 @@ export default function Stress() {
   const [mood, setMood] = useState(2)
   const [showJournal, setShowJournal] = useState(false)
 
+  // Photo-import state
+  const [pendingImages, setPendingImages] = useState([])
+  const [lightboxImage, setLightboxImage] = useState(null)
+  const [showKeyPanel, setShowKeyPanel] = useState(false)
+  const [apiKeyInput, setApiKeyInput] = useState('')
+  const [hasApiKey, setHasApiKey] = useState(() => !!getApiKey())
+
+  // Close lightbox on Escape
+  useEffect(() => {
+    if (!lightboxImage) return
+    const onKey = (e) => { if (e.key === 'Escape') setLightboxImage(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightboxImage])
+
+  const handleFileSelect = async (file) => {
+    if (!file || !file.type.startsWith('image/')) return
+    if (pendingImages.length >= 3) return
+    try {
+      const dataUrl = await fileToDataUrl(file)
+      setPendingImages(prev => [...prev, {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        dataUrl,
+        mediaType: file.type,
+        status: 'pending',
+        error: null,
+      }])
+    } catch { /* ignore */ }
+  }
+
+  const updateImage = (id, patch) =>
+    setPendingImages(prev => prev.map(img => img.id === id ? { ...img, ...patch } : img))
+
+  const removeImage = (id) =>
+    setPendingImages(prev => prev.filter(img => img.id !== id))
+
+  const attachImage = (id) => updateImage(id, { status: 'attached', error: null })
+
+  const transcribeImage = async (id) => {
+    if (!getApiKey()) {
+      setShowKeyPanel(true)
+      setHasApiKey(false)
+      return
+    }
+    const image = pendingImages.find(img => img.id === id)
+    if (!image) return
+
+    updateImage(id, { status: 'transcribing', error: null })
+    try {
+      const text = await transcribeHandwriting(image.dataUrl, image.mediaType)
+      setJournalText(prev => prev ? `${prev}\n\n${text}` : text)
+      removeImage(id)
+    } catch (error) {
+      if (error?.message === ERR_NO_KEY) {
+        setShowKeyPanel(true)
+        setHasApiKey(false)
+        updateImage(id, { status: 'pending' })
+      } else {
+        updateImage(id, { status: 'error', error: 'Text konnte nicht erkannt werden.' })
+      }
+    }
+  }
+
+  const handleSaveApiKey = () => {
+    const trimmed = apiKeyInput.trim()
+    if (!trimmed) return
+    saveApiKey(trimmed)
+    setHasApiKey(true)
+    setApiKeyInput('')
+    setShowKeyPanel(false)
+  }
+
+  const handleClearApiKey = () => {
+    saveApiKey(null)
+    setHasApiKey(false)
+    setApiKeyInput('')
+  }
+
   const saveJournal = () => {
     if (!journalText.trim()) return
-    addJournalEntry({ date: new Date().toISOString().split('T')[0], mood, text: journalText, tags: [] })
+    const attached = pendingImages
+      .filter(img => img.status === 'attached')
+      .map(img => img.dataUrl)
+    addJournalEntry({
+      date: new Date().toISOString().split('T')[0],
+      mood,
+      text: journalText,
+      tags: [],
+      ...(attached.length > 0 && { images: attached }),
+    })
     setJournalText('')
+    setPendingImages([])
     setShowJournal(false)
   }
 
@@ -182,6 +277,126 @@ export default function Stress() {
               className="w-full h-24 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm p-3 resize-none focus:outline-none focus:border-rose-500/50"
               placeholder="Was beschäftigt dich gerade? Wie war dein Tag?"
             />
+
+            {/* Pending image previews */}
+            {pendingImages.length > 0 && (
+              <div className="space-y-2">
+                {pendingImages.map(img => (
+                  <div key={img.id} className="p-2 rounded-xl bg-white/3 border border-teal-500/25">
+                    <div className="relative">
+                      <img
+                        src={img.dataUrl} alt="Vorschau"
+                        className="w-full h-32 object-cover rounded-lg border border-teal-500/20"
+                      />
+                      <button
+                        onClick={() => removeImage(img.id)}
+                        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 hover:bg-rose-500/80 text-white flex items-center justify-center transition-colors"
+                        title="Entfernen"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+
+                    {img.status === 'attached' ? (
+                      <div className="mt-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-teal-500/15 text-teal-300 text-xs">
+                        <Camera size={12} /> Wird mit Eintrag gespeichert
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            onClick={() => attachImage(img.id)}
+                            disabled={img.status === 'transcribing'}
+                            className="flex-1 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 text-xs disabled:opacity-50 transition-colors"
+                          >
+                            Als Bild speichern
+                          </button>
+                          <button
+                            onClick={() => transcribeImage(img.id)}
+                            disabled={img.status === 'transcribing'}
+                            className="flex-1 py-1.5 rounded-lg bg-teal-500/10 border border-teal-500/30 hover:bg-teal-500/20 text-teal-300 text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
+                          >
+                            {img.status === 'transcribing' ? (
+                              <><Loader2 size={12} className="animate-spin" /> Erkenne…</>
+                            ) : (
+                              <><Sparkles size={12} /> Als Text erkennen (KI)</>
+                            )}
+                          </button>
+                        </div>
+                        {img.status === 'error' && img.error && (
+                          <p className="mt-1.5 text-xs text-rose-400">{img.error}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Photo import buttons */}
+            {pendingImages.length < 3 && (
+              <div className="flex gap-2">
+                <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-transparent border border-teal-500/30 hover:bg-teal-500/10 text-teal-300 text-xs cursor-pointer transition-colors">
+                  <input
+                    type="file" accept="image/*" capture="environment" className="hidden"
+                    onChange={e => { handleFileSelect(e.target.files?.[0]); e.target.value = '' }}
+                  />
+                  <Camera size={14} /> Foto aufnehmen
+                </label>
+                <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-transparent border border-teal-500/30 hover:bg-teal-500/10 text-teal-300 text-xs cursor-pointer transition-colors">
+                  <input
+                    type="file" accept="image/*" className="hidden"
+                    onChange={e => { handleFileSelect(e.target.files?.[0]); e.target.value = '' }}
+                  />
+                  <ImagePlus size={14} /> Bild hochladen
+                </label>
+              </div>
+            )}
+
+            {/* API key footer */}
+            <div className="flex items-center justify-between pt-1">
+              <button
+                onClick={() => setShowKeyPanel(p => !p)}
+                className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-teal-400 transition-colors"
+              >
+                <Key size={11} />
+                {hasApiKey ? 'API-Schlüssel verwalten' : 'API-Schlüssel hinzufügen'}
+                {hasApiKey && <span className="text-teal-500/60 font-mono">{maskApiKey(getApiKey())}</span>}
+              </button>
+            </div>
+
+            {showKeyPanel && (
+              <div className="p-3 rounded-xl bg-white/3 border border-teal-500/20 space-y-2">
+                <p className="text-xs text-slate-400">
+                  Anthropic API-Schlüssel für die handschriftliche Texterkennung. Wird nur lokal in deinem Browser gespeichert.
+                </p>
+                <input
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={e => setApiKeyInput(e.target.value)}
+                  placeholder={hasApiKey ? 'Neuen Schlüssel eingeben…' : 'sk-ant-...'}
+                  className="w-full rounded-xl bg-white/5 border border-white/10 text-white text-xs p-2 focus:outline-none focus:border-teal-500/50"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveApiKey}
+                    disabled={!apiKeyInput.trim()}
+                    className="px-3 py-1.5 rounded-lg bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs hover:bg-teal-500/30 disabled:opacity-50"
+                  >
+                    Speichern
+                  </button>
+                  {hasApiKey && (
+                    <button onClick={handleClearApiKey} className="px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs hover:bg-rose-500/20">
+                      Entfernen
+                    </button>
+                  )}
+                  <button onClick={() => setShowKeyPanel(false)} className="ml-auto px-3 py-1.5 rounded-lg bg-white/5 text-slate-400 text-xs hover:bg-white/10">
+                    Schließen
+                  </button>
+                </div>
+              </div>
+            )}
+
             <button onClick={saveJournal} className="w-full py-2 rounded-xl gradient-rose text-white text-sm font-medium">Speichern</button>
           </div>
         )}
@@ -189,16 +404,37 @@ export default function Stress() {
         <div className="space-y-3">
           {state.journalEntries.map(e => {
             const m = moodOptions.find(o => o.value === e.mood) || moodOptions[1]
+            const hasImages = e.images?.length > 0
             return (
               <div key={e.id} className="p-3 rounded-xl bg-white/3 border border-white/5">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs text-slate-500">{e.date}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">{e.date}</span>
+                    {hasImages && (
+                      <span className="flex items-center gap-1 text-xs text-teal-400" title="Enthält Fotos">
+                        <Camera size={11} />
+                      </span>
+                    )}
+                  </div>
                   <m.icon size={14} className={m.color} />
                 </div>
-                <p className="text-sm text-slate-300">{e.text}</p>
+                <p className="text-sm text-slate-300 whitespace-pre-wrap">{e.text}</p>
                 {e.tags?.length > 0 && (
                   <div className="flex gap-1.5 mt-2">
                     {e.tags.map(t => <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-slate-400">{t}</span>)}
+                  </div>
+                )}
+                {hasImages && (
+                  <div className="flex gap-2 mt-2.5 overflow-x-auto pb-1">
+                    {e.images.map((src, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setLightboxImage(src)}
+                        className="flex-shrink-0 rounded-lg overflow-hidden border border-white/10 hover:border-teal-500/40 transition-colors"
+                      >
+                        <img src={src} alt="" className="w-16 h-16 object-cover" />
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -206,6 +442,28 @@ export default function Stress() {
           })}
         </div>
       </div>
+
+      {/* Lightbox */}
+      {lightboxImage && (
+        <div
+          onClick={() => setLightboxImage(null)}
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
+        >
+          <button
+            onClick={() => setLightboxImage(null)}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+            title="Schließen (Esc)"
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={lightboxImage}
+            alt=""
+            onClick={e => e.stopPropagation()}
+            className="max-w-full max-h-full object-contain rounded-xl cursor-default"
+          />
+        </div>
+      )}
     </div>
   )
 }
