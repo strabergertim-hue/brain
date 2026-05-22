@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import ScoreRing from '../components/ScoreRing'
 import {
@@ -24,6 +25,16 @@ const scoreLabels = {
   sleep: 'Schlaf', focus: 'Fokus', movement: 'Bewegung', stress: 'Stressresistenz',
 }
 
+const scoreRoutes = {
+  memory:    '/learn',
+  attention: '/attention',
+  learning:  '/learn',
+  sleep:     '/sleep',
+  focus:     '/focus',
+  movement:  '/movement',
+  stress:    '/stress',
+}
+
 const hints = [
   { icon: Moon,     color: 'text-indigo-400',  bg: 'bg-indigo-500/10', text: 'Dein Schlaf war die letzten 2 Nächte unter 7h. Probiere 30 min früher ins Bett zu gehen.' },
   { icon: Activity, color: 'text-green-400',   bg: 'bg-green-500/10',  text: 'Heute noch keine Bewegung erfasst. 10 Minuten Spaziergang verbessern die Kognition.' },
@@ -32,6 +43,7 @@ const hints = [
 
 export default function Dashboard() {
   const { state } = useApp()
+  const navigate = useNavigate()
   const { scores, streaks } = state
 
   const overall = Math.round(Object.values(scores).reduce((a, b) => a + b, 0) / Object.keys(scores).length)
@@ -170,15 +182,20 @@ export default function Dashboard() {
           <div className="space-y-2">
             {weaknesses.length === 0 && <p className="text-slate-500 text-sm">Keine Schwächen erkannt – weiter so!</p>}
             {weaknesses.map(k => (
-              <div key={k} className="flex items-center justify-between p-3 rounded-xl bg-rose-500/10 border border-rose-500/15">
+              <div
+                key={k}
+                onClick={() => navigate(scoreRoutes[k])}
+                className="flex items-center justify-between px-4 py-3.5 rounded-xl bg-rose-500/5 border border-white/10 hover:bg-white/5 hover:border-white/20 cursor-pointer transition-all group"
+                style={{ borderLeft: `2px solid ${scoreColors[k]}` }}
+              >
                 <div className="flex items-center gap-3">
-                  <AlertTriangle size={16} className="text-rose-400" />
+                  <AlertTriangle size={15} className="text-rose-400 flex-shrink-0" />
                   <div>
                     <p className="text-sm font-medium text-white">{scoreLabels[k]}</p>
                     <p className="text-xs text-slate-400">Score: {scores[k]}/100 · Ausbaufähig</p>
                   </div>
                 </div>
-                <ChevronRight size={14} className="text-slate-500" />
+                <ChevronRight size={14} className="text-slate-500 group-hover:text-slate-300 transition-colors" />
               </div>
             ))}
           </div>
