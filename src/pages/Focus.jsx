@@ -2,70 +2,166 @@ import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../context/AppContext'
 import { Target, Plus, Play, Pause, RotateCcw, Timer } from 'lucide-react'
 
-function PomodoroTimer() {
-  const MODES = [
-    { key: 'work', label: 'Fokus', minutes: 25, color: '#06b6d4' },
-    { key: 'short', label: 'Kurze Pause', minutes: 5, color: '#10b981' },
-    { key: 'long', label: 'Lange Pause', minutes: 15, color: '#6366f1' },
-  ]
+// Full 8-segment pomodoro cycle: focus × 4, short break × 3, long break × 1
+const CYCLE = [
+  { type: 'work',  label: 'Fokus',       minutes: 25, color: '#06b6d4' },
+  { type: 'short', label: 'Kurze Pause', minutes: 5,  color: '#10b981' },
+  { type: 'work',  label: 'Fokus',       minutes: 25, color: '#06b6d4' },
+  { type: 'short', label: 'Kurze Pause', minutes: 5,  color: '#10b981' },
+  { type: 'work',  label: 'Fokus',       minutes: 25, color: '#06b6d4' },
+  { type: 'short', label: 'Kurze Pause', minutes: 5,  color: '#10b981' },
+  { type: 'work',  label: 'Fokus',       minutes: 25, color: '#06b6d4' },
+  { type: 'long',  label: 'Lange Pause', minutes: 30, color: '#6366f1' },
+]
 
-  const [modeIdx, setModeIdx] = useState(0)
-  const [seconds, setSeconds] = useState(MODES[0].minutes * 60)
-  const [running, setRunning] = useState(false)
-  const [rounds, setRounds] = useState(0)
-  const intervalRef = useRef(null)
+// ─── Zyklus-Fortschrittsanzeige ───────────────────────────────────────────────
 
-  const mode = MODES[modeIdx]
-  const total = mode.minutes * 60
-  const pct = ((total - seconds) / total) * 100
-  const r = 70
-  const circ = 2 * Math.PI * r
+function CycleIndicator({ segIdx, completedIndices, onJump }) {
+  return (
+    <div className="flex items-center justify-center gap-1.5 py-1">
+      {CYCLE.map((seg, i) => {
+        const done = completedIndices.has(i)
+        const cur  = i === segIdx
+        const dim  = !done && !cur
+
+        const base = {
+          cursor: 'pointer',
+          background: dim ? 'rgba(255,255,255,0.13)' : seg.color,
+          boxShadow: cur ? `0 0 7px ${seg.color}` : 'none',
+          opacity: dim ? 0.4 : 1,
+          transition: 'all 0.25s',
+        }
+
+        if (seg.type === 'short') {
+          return (
+            <div key={i} onClick={() => onJump(i)} title={seg.label}
+              style={{ ...base, width: 7, height: 7, borderRadius: '50%' }}
+            />
+          )
+        }
+        if (seg.type === 'long') {
+          return (
+            <div key={i} onClick={() => onJump(i)} title={seg.label}
+              style={{ ...base, width: 44, height: 8, borderRadius: 4 }}
+            />
+          )
+        }
+        // work
+        return (
+          <div key={i} onClick={() => onJump(i)} title={seg.label}
+            style={{ ...base, width: 22, height: 8, borderRadius: 3 }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Pomodoro-Timer ───────────────────────────────────────────────────────────
+
+function PomodoroTimer({ onSessionComplete }) {
+  const [segIdx, setSegIdx]                   = useState(0)
+  const [seconds, setSeconds]                 = useState(CYCLE[0].minutes * 60)
+  const [running, setRunning]                 = useState(false)
+  const [completedIndices, setCompletedIndices] = useState(new Set())
+  const [totalPomodoros, setTotalPomodoros]   = useState(0)
+  const [sessionTitle, setSessionTitle]       = useState('')
+
+  const intervalRef        = useRef(null)
+  const breakAutoStartRef  = useRef(null)
+
+  // Refs so effects always read fresh values without needing them as deps
+  const segIdxRef          = useRef(segIdx)
+  segIdxRef.current        = segIdx
+  const sessionTitleRef    = useRef(sessionTitle)
+  sessionTitleRef.current  = sessionTitle
+  const onCompleteRef      = useRef(onSessionComplete)
+  onCompleteRef.current    = onSessionComplete
+
+  const seg   = CYCLE[segIdx]
+  const total = seg.minutes * 60
+  const pct   = ((total - seconds) / total) * 100
+  const r     = 70
+  const circ  = 2 * Math.PI * r
   const offset = circ - (pct / 100) * circ
 
+  // Ticker
   useEffect(() => {
     if (running) {
-      intervalRef.current = setInterval(() => {
-        setSeconds(s => {
-          if (s <= 1) {
-            clearInterval(intervalRef.current)
-            setRunning(false)
-            if (mode.key === 'work') setRounds(r => r + 1)
-            return 0
-          }
-          return s - 1
-        })
-      }, 1000)
+      intervalRef.current = setInterval(
+        () => setSeconds(s => (s > 0 ? s - 1 : 0)),
+        1000
+      )
     } else {
       clearInterval(intervalRef.current)
     }
     return () => clearInterval(intervalRef.current)
   }, [running])
 
-  const switchMode = (i) => {
-    setModeIdx(i)
-    setSeconds(MODES[i].minutes * 60)
+  // Completion detection — fires whenever seconds or running changes
+  useEffect(() => {
+    if (seconds !== 0 || !running) return
+
+    clearInterval(intervalRef.current)
+    clearTimeout(breakAutoStartRef.current)
+    setRunning(false)
+
+    const curIdx  = segIdxRef.current
+    const curSeg  = CYCLE[curIdx]
+    const nextIdx = (curIdx + 1) % CYCLE.length
+
+    // Mark segment completed; reset set on new cycle
+    setCompletedIndices(prev =>
+      nextIdx === 0 ? new Set() : new Set([...prev, curIdx])
+    )
+
+    // Auto-save completed focus sessions
+    if (curSeg.type === 'work') {
+      onCompleteRef.current(sessionTitleRef.current.trim() || 'Pomodoro Session')
+      setTotalPomodoros(n => n + 1)
+    }
+
+    // Advance to next segment
+    setSegIdx(nextIdx)
+    setSeconds(CYCLE[nextIdx].minutes * 60)
+
+    // Auto-start breaks; focus waits for user
+    if (curSeg.type === 'work') {
+      breakAutoStartRef.current = setTimeout(() => setRunning(true), 600)
+    }
+  }, [seconds, running])
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    clearInterval(intervalRef.current)
+    clearTimeout(breakAutoStartRef.current)
+  }, [])
+
+  const jumpToSegment = (idx) => {
+    clearTimeout(breakAutoStartRef.current)
+    setSegIdx(idx)
+    setSeconds(CYCLE[idx].minutes * 60)
     setRunning(false)
   }
 
-  const reset = () => { setSeconds(mode.minutes * 60); setRunning(false) }
+  const reset = () => {
+    clearTimeout(breakAutoStartRef.current)
+    setSeconds(CYCLE[segIdxRef.current].minutes * 60)
+    setRunning(false)
+  }
 
   const mins = String(Math.floor(seconds / 60)).padStart(2, '0')
   const secs = String(seconds % 60).padStart(2, '0')
 
   return (
-    <div className="space-y-5">
-      {/* Mode tabs */}
-      <div className="flex gap-2">
-        {MODES.map((m, i) => (
-          <button key={m.key} onClick={() => switchMode(i)}
-            className={`flex-1 py-2 rounded-xl text-xs font-medium transition-all
-              ${modeIdx === i ? 'text-white' : 'text-slate-400 bg-white/5 hover:bg-white/10'}`}
-            style={modeIdx === i ? { background: m.color + '33', border: `1px solid ${m.color}55`, color: m.color } : {}}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
+    <div className="space-y-4">
+      {/* Session title — used for auto-save */}
+      <input
+        value={sessionTitle}
+        onChange={e => setSessionTitle(e.target.value)}
+        placeholder="Session-Titel (optional – wird bei Abschluss gespeichert)"
+        className="w-full rounded-xl bg-white/5 border border-white/10 text-white text-sm p-2.5 focus:outline-none focus:border-cyan-500/50 placeholder:text-slate-600"
+      />
 
       {/* Ring timer */}
       <div className="flex justify-center">
@@ -74,7 +170,7 @@ function PomodoroTimer() {
             <circle cx={85} cy={85} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={8} />
             <circle
               cx={85} cy={85} r={r} fill="none"
-              stroke={mode.color} strokeWidth={8}
+              stroke={seg.color} strokeWidth={8}
               strokeLinecap="round"
               strokeDasharray={circ} strokeDashoffset={offset}
               style={{ transition: running ? 'stroke-dashoffset 1s linear' : 'none' }}
@@ -82,20 +178,30 @@ function PomodoroTimer() {
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-4xl font-mono font-bold text-white">{mins}:{secs}</span>
-            <span className="text-xs text-slate-400 mt-1">{mode.label}</span>
+            <span className="text-xs mt-1" style={{ color: seg.color }}>{seg.label}</span>
           </div>
         </div>
       </div>
 
+      {/* Cycle progress — click any segment to jump */}
+      <CycleIndicator
+        segIdx={segIdx}
+        completedIndices={completedIndices}
+        onJump={jumpToSegment}
+      />
+
       {/* Controls */}
       <div className="flex gap-3 justify-center">
-        <button onClick={reset} className="w-11 h-11 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400">
+        <button
+          onClick={reset}
+          className="w-11 h-11 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
+        >
           <RotateCcw size={16} />
         </button>
         <button
           onClick={() => setRunning(r => !r)}
           className="w-20 h-11 rounded-xl flex items-center justify-center gap-2 text-white font-semibold text-sm transition-all"
-          style={{ background: mode.color }}
+          style={{ background: seg.color }}
         >
           {running ? <Pause size={16} /> : <Play size={16} />}
           {running ? 'Pause' : 'Start'}
@@ -103,11 +209,14 @@ function PomodoroTimer() {
       </div>
 
       <p className="text-center text-xs text-slate-500">
-        Abgeschlossene Pomodoros heute: <span className="text-amber-400 font-semibold">{rounds}</span>
+        Abgeschlossene Pomodoros heute:{' '}
+        <span className="text-amber-400 font-semibold">{totalPomodoros}</span>
       </p>
     </div>
   )
 }
+
+// ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
 const productivityLabels = ['', 'Sehr schlecht', 'Schlecht', 'OK', 'Gut', 'Ausgezeichnet']
 const techniques = ['Pomodoro', 'Zeitblock', 'Deep Work', 'Flowstate', 'Sonstige']
@@ -115,7 +224,9 @@ const techniques = ['Pomodoro', 'Zeitblock', 'Deep Work', 'Flowstate', 'Sonstige
 export default function Focus() {
   const { state, addFocusSession } = useApp()
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ title: '', description: '', productivity: 4, duration: 25, technique: 'Pomodoro' })
+  const [form, setForm] = useState({
+    title: '', description: '', productivity: 4, duration: 25, technique: 'Pomodoro',
+  })
 
   const handleAdd = () => {
     if (!form.title) return
@@ -124,15 +235,27 @@ export default function Focus() {
     setShowForm(false)
   }
 
+  const handleAutoSave = (title) => {
+    addFocusSession({
+      title,
+      description: '',
+      productivity: 4,
+      duration: 25,
+      technique: 'Pomodoro',
+      date: new Date().toISOString().split('T')[0],
+    })
+  }
+
   return (
     <div className="p-6 space-y-5">
+
       {/* Pomodoro */}
       <div className="card p-6">
         <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
           <Timer size={16} className="text-cyan-400" />
           Pomodoro-Timer
         </h2>
-        <PomodoroTimer />
+        <PomodoroTimer onSessionComplete={handleAutoSave} />
       </div>
 
       {/* Sessions */}
@@ -142,7 +265,10 @@ export default function Focus() {
             <Target size={16} className="text-cyan-400" />
             Fokus-Sessions
           </h2>
-          <button onClick={() => setShowForm(f => !f)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl gradient-cyan text-white text-xs font-medium">
+          <button
+            onClick={() => setShowForm(f => !f)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl gradient-cyan text-white text-xs font-medium"
+          >
             <Plus size={14} /> Session
           </button>
         </div>
@@ -162,19 +288,26 @@ export default function Focus() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Dauer (Min)</label>
-                <input type="number" value={form.duration} min={5} max={240} onChange={e => setForm(f => ({ ...f, duration: +e.target.value }))}
-                  className="w-full rounded-xl bg-white/5 border border-white/10 text-white text-sm p-2.5 focus:outline-none focus:border-cyan-500/50" />
+                <input
+                  type="number" value={form.duration} min={5} max={240}
+                  onChange={e => setForm(f => ({ ...f, duration: +e.target.value }))}
+                  className="w-full rounded-xl bg-white/5 border border-white/10 text-white text-sm p-2.5 focus:outline-none focus:border-cyan-500/50"
+                />
               </div>
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Technik</label>
-                <select value={form.technique} onChange={e => setForm(f => ({ ...f, technique: e.target.value }))}
-                  className="w-full rounded-xl bg-[#1a1a2e] border border-white/10 text-white text-sm p-2.5 focus:outline-none focus:border-cyan-500/50">
+                <select
+                  value={form.technique} onChange={e => setForm(f => ({ ...f, technique: e.target.value }))}
+                  className="w-full rounded-xl bg-[#1a1a2e] border border-white/10 text-white text-sm p-2.5 focus:outline-none focus:border-cyan-500/50"
+                >
                   {techniques.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-2">Produktivität: <span className="text-white">{productivityLabels[form.productivity]}</span></label>
+              <label className="text-xs text-slate-400 block mb-2">
+                Produktivität: <span className="text-white">{productivityLabels[form.productivity]}</span>
+              </label>
               <div className="flex gap-1.5">
                 {[1,2,3,4,5].map(n => (
                   <button key={n} onClick={() => setForm(f => ({ ...f, productivity: n }))}
@@ -183,7 +316,9 @@ export default function Focus() {
                 ))}
               </div>
             </div>
-            <button onClick={handleAdd} className="w-full py-2 rounded-xl gradient-cyan text-white text-sm font-medium">Speichern</button>
+            <button onClick={handleAdd} className="w-full py-2 rounded-xl gradient-cyan text-white text-sm font-medium">
+              Speichern
+            </button>
           </div>
         )}
 
