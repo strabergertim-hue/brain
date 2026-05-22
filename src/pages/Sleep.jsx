@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useApp } from '../context/AppContext'
 import {
   Moon, Plus, Star, ChevronLeft, ChevronRight,
-  CalendarDays, List, Pencil, Trash2
+  CalendarDays, List, Pencil
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine
@@ -56,7 +56,7 @@ const CustomTooltip = ({ active, payload }) => {
 const MONTH_NAMES = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
 const DOW = ['Mo','Di','Mi','Do','Fr','Sa','So']
 
-function SleepCalendar({ logs }) {
+function SleepCalendar({ logs, onDayClick, selectedDate }) {
   const now = new Date()
   const [month, setMonth] = useState(new Date(now.getFullYear(), now.getMonth(), 1))
 
@@ -104,26 +104,38 @@ function SleepCalendar({ logs }) {
         {cells.map((day, i) => {
           if (!day) return <div key={`e-${i}`} />
 
-          const dateStr = `${year}-${String(mon + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          const entry   = logMap[dateStr]
-          const isToday = dateStr === todayStr
-          const color   = entry ? hoursColor(entry.hours) : null
+          const dateStr    = `${year}-${String(mon + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          const entry      = logMap[dateStr]
+          const isToday    = dateStr === todayStr
+          const isSelected = dateStr === selectedDate
+          const color      = entry ? hoursColor(entry.hours) : null
 
-          const cellBg     = entry ? `${color}1a` : 'transparent'  // 10% opacity
-          const cellBorder = isToday ? '#7c3aed' : entry ? `${color}4d` : 'rgba(255,255,255,0.06)'
+          const cellBg     = entry ? `${color}1a` : 'transparent'
+          const cellBorder = isSelected
+            ? '#a78bfa'
+            : isToday
+            ? '#7c3aed'
+            : entry
+            ? `${color}4d`
+            : 'rgba(255,255,255,0.06)'
 
           return (
             <div
               key={dateStr}
-              className="rounded-lg flex flex-col p-1"
+              onClick={() => onDayClick(dateStr)}
+              className="rounded-lg flex flex-col p-1 cursor-pointer transition-all hover:brightness-125"
               style={{
                 minHeight: 56,
                 border: `1px solid ${cellBorder}`,
-                background: cellBg,
-                boxShadow: isToday ? '0 0 0 1px #7c3aed' : 'none',
+                background: isSelected ? 'rgba(139,92,246,0.12)' : cellBg,
+                boxShadow: isSelected
+                  ? '0 0 0 1px #a78bfa'
+                  : isToday
+                  ? '0 0 0 1px #7c3aed'
+                  : 'none',
               }}
             >
-              <span style={{ fontSize: 10, color: isToday ? '#a78bfa' : '#475569', lineHeight: 1 }}>
+              <span style={{ fontSize: 10, color: isSelected ? '#c4b5fd' : isToday ? '#a78bfa' : '#475569', lineHeight: 1 }}>
                 {day}
               </span>
               {entry && (
@@ -160,12 +172,77 @@ function SleepCalendar({ logs }) {
   )
 }
 
+// ─── Wiederverwendbares Bearbeitungs-Formular ────────────────────────────────
+
+function EditForm({ form, onChange, onSave, onCancel, onDelete }) {
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+
+  return (
+    <div className="p-3 rounded-xl border border-violet-500/30 bg-violet-500/5 space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">Datum</label>
+          <input
+            type="date" value={form.date} disabled
+            className="w-full rounded-xl bg-white/5 border border-white/10 text-slate-500 text-sm p-2"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">Stunden</label>
+          <input
+            type="number" min="0" max="24" step="0.5"
+            value={form.hours}
+            onChange={e => onChange({ ...form, hours: e.target.value })}
+            className="w-full rounded-xl bg-white/5 border border-white/10 text-white text-sm p-2 focus:outline-none focus:border-violet-500/50"
+          />
+        </div>
+      </div>
+      <div>
+        <label className="text-xs text-slate-400 block mb-1.5">Schlafqualität</label>
+        <QualityStars value={form.quality} onChange={q => onChange({ ...form, quality: q })} />
+      </div>
+      <div className="flex gap-2">
+        {onDelete && (
+          deleteConfirm ? (
+            <>
+              <button
+                onClick={() => { onDelete(); setDeleteConfirm(false) }}
+                className="py-2 px-3 rounded-xl bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 text-sm font-medium border border-rose-500/30"
+              >
+                Bestätigen
+              </button>
+              <button
+                onClick={() => setDeleteConfirm(false)}
+                className="py-2 px-3 rounded-xl bg-white/5 text-slate-400 text-sm"
+              >
+                Nein
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setDeleteConfirm(true)}
+              className="py-2 px-3 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-sm border border-rose-500/20 transition-colors"
+            >
+              Löschen
+            </button>
+          )
+        )}
+        <button onClick={onCancel} className="flex-1 py-2 rounded-xl bg-white/5 text-slate-300 text-sm hover:bg-white/10">
+          Abbrechen
+        </button>
+        <button onClick={onSave} className="flex-1 py-2 rounded-xl gradient-purple text-white text-sm font-medium">
+          Speichern
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Protokoll-Liste ─────────────────────────────────────────────────────────
 
 function Protokoll({ logs, onUpsert, onDelete }) {
-  const [editingDate, setEditingDate]       = useState(null)
-  const [editForm, setEditForm]             = useState(null)
-  const [deleteConfirmDate, setDeleteConfirmDate] = useState(null)
+  const [editingDate, setEditingDate] = useState(null)
+  const [editForm, setEditForm]       = useState(null)
 
   const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date))
 
@@ -173,7 +250,6 @@ function Protokoll({ logs, onUpsert, onDelete }) {
     const e = logs.find(l => l.date === date)
     setEditingDate(date)
     setEditForm({ ...e, hours: String(e.hours) })
-    setDeleteConfirmDate(null)
   }
 
   const saveEdit = () => {
@@ -192,39 +268,14 @@ function Protokoll({ logs, onUpsert, onDelete }) {
     <div className="space-y-1.5">
       {sorted.map(l => (
         editingDate === l.date ? (
-          /* ── Inline-Bearbeiten ── */
-          <div key={l.date} className="p-3 rounded-xl border border-violet-500/30 bg-violet-500/5 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Datum</label>
-                <input
-                  type="date" value={editForm.date} disabled
-                  className="w-full rounded-xl bg-white/5 border border-white/10 text-slate-500 text-sm p-2"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Stunden</label>
-                <input
-                  type="number" min="0" max="24" step="0.5"
-                  value={editForm.hours}
-                  onChange={e => setEditForm(f => ({ ...f, hours: e.target.value }))}
-                  className="w-full rounded-xl bg-white/5 border border-white/10 text-white text-sm p-2 focus:outline-none focus:border-violet-500/50"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1.5">Schlafqualität</label>
-              <QualityStars value={editForm.quality} onChange={q => setEditForm(f => ({ ...f, quality: q }))} />
-            </div>
-            <div className="flex gap-2">
-              <button onClick={cancelEdit} className="flex-1 py-2 rounded-xl bg-white/5 text-slate-300 text-sm hover:bg-white/10">
-                Abbrechen
-              </button>
-              <button onClick={saveEdit} className="flex-1 py-2 rounded-xl gradient-purple text-white text-sm font-medium">
-                Speichern
-              </button>
-            </div>
-          </div>
+          <EditForm
+            key={l.date}
+            form={editForm}
+            onChange={setEditForm}
+            onSave={saveEdit}
+            onCancel={cancelEdit}
+            onDelete={() => { onDelete(l.date); setEditingDate(null); setEditForm(null) }}
+          />
         ) : (
           /* ── Normale Zeile ── */
           <div
@@ -245,40 +296,13 @@ function Protokoll({ logs, onUpsert, onDelete }) {
                 <span className="text-base font-bold" style={{ color: hoursColor(l.hours) }}>{l.hours}h</span>
                 <p className="text-xs text-slate-500">{hoursLabel(l.hours)}</p>
               </div>
-
-              {deleteConfirmDate === l.date ? (
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => { onDelete(l.date); setDeleteConfirmDate(null) }}
-                    className="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 text-xs font-medium"
-                  >
-                    Löschen
-                  </button>
-                  <button
-                    onClick={() => setDeleteConfirmDate(null)}
-                    className="px-2 py-1 rounded-lg bg-white/5 text-slate-400 text-xs"
-                  >
-                    Nein
-                  </button>
-                </div>
-              ) : (
-                <div className="flex gap-0.5">
-                  <button
-                    onClick={() => startEdit(l.date)}
-                    className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-                    title="Bearbeiten"
-                  >
-                    <Pencil size={13} />
-                  </button>
-                  <button
-                    onClick={() => { setDeleteConfirmDate(l.date); setEditingDate(null) }}
-                    className="p-1.5 rounded-lg hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 transition-colors"
-                    title="Löschen"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              )}
+              <button
+                onClick={() => startEdit(l.date)}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                title="Bearbeiten"
+              >
+                <Pencil size={13} />
+              </button>
             </div>
           </div>
         )
@@ -295,6 +319,7 @@ export default function Sleep() {
   const [showForm, setShowForm]         = useState(false)
   const [confirmOverwrite, setConfirmOverwrite] = useState(false)
   const [bottomView, setBottomView]     = useState('calendar') // 'calendar' | 'list'
+  const [calendarEdit, setCalendarEdit] = useState(null) // { date, hours: string, quality } | null
 
   const logs = state.sleepLog
 
@@ -328,6 +353,31 @@ export default function Sleep() {
     setShowForm(f => !f)
     setConfirmOverwrite(false)
   }
+
+  const openCalendarEdit = (dateStr) => {
+    if (calendarEdit?.date === dateStr) {
+      setCalendarEdit(null)
+      return
+    }
+    const entry = logs.find(l => l.date === dateStr)
+    setCalendarEdit(entry
+      ? { ...entry, hours: String(entry.hours) }
+      : { date: dateStr, hours: '', quality: 4 }
+    )
+  }
+
+  const saveCalendarEdit = () => {
+    if (!calendarEdit.hours) return
+    upsertSleepEntry({ date: calendarEdit.date, hours: parseFloat(calendarEdit.hours), quality: calendarEdit.quality })
+    setCalendarEdit(null)
+  }
+
+  const deleteCalendarEntry = () => {
+    deleteSleepEntry(calendarEdit.date)
+    setCalendarEdit(null)
+  }
+
+  const calendarEntryExists = calendarEdit && logs.some(l => l.date === calendarEdit.date)
 
   return (
     <div className="p-6 space-y-5">
@@ -380,14 +430,14 @@ export default function Sleep() {
             {/* View-Toggle */}
             <div className="flex gap-1 p-1 rounded-xl bg-white/5">
               <button
-                onClick={() => setBottomView('calendar')}
+                onClick={() => { setBottomView('calendar'); setCalendarEdit(null) }}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all
                   ${bottomView === 'calendar' ? 'bg-violet-600/30 text-violet-300 border border-violet-500/30' : 'text-slate-400 hover:text-white'}`}
               >
                 <CalendarDays size={13} /> Kalender
               </button>
               <button
-                onClick={() => setBottomView('list')}
+                onClick={() => { setBottomView('list'); setCalendarEdit(null) }}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all
                   ${bottomView === 'list' ? 'bg-violet-600/30 text-violet-300 border border-violet-500/30' : 'text-slate-400 hover:text-white'}`}
               >
@@ -454,10 +504,28 @@ export default function Sleep() {
         )}
 
         {/* Kalender oder Protokoll-Liste */}
-        {bottomView === 'calendar'
-          ? <SleepCalendar logs={logs} />
-          : <Protokoll logs={logs} onUpsert={upsertSleepEntry} onDelete={deleteSleepEntry} />
-        }
+        {bottomView === 'calendar' ? (
+          <>
+            <SleepCalendar
+              logs={logs}
+              onDayClick={openCalendarEdit}
+              selectedDate={calendarEdit?.date ?? null}
+            />
+            {calendarEdit && (
+              <div className="mt-4">
+                <EditForm
+                  form={calendarEdit}
+                  onChange={setCalendarEdit}
+                  onSave={saveCalendarEdit}
+                  onCancel={() => setCalendarEdit(null)}
+                  onDelete={calendarEntryExists ? deleteCalendarEntry : null}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <Protokoll logs={logs} onUpsert={upsertSleepEntry} onDelete={deleteSleepEntry} />
+        )}
       </div>
     </div>
   )
