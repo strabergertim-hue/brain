@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../context/AppContext'
-import { Target, Plus, Play, Pause, RotateCcw, Timer } from 'lucide-react'
+import { Target, Plus, Play, Pause, RotateCcw, Timer, SkipForward, CheckCircle } from 'lucide-react'
 
 // Full 8-segment pomodoro cycle: focus × 4, short break × 3, long break × 1
 const CYCLE = [
@@ -16,41 +16,55 @@ const CYCLE = [
 
 // ─── Zyklus-Fortschrittsanzeige ───────────────────────────────────────────────
 
-function CycleIndicator({ segIdx, completedIndices, onJump }) {
+function CycleIndicator({ segIdx, completedIndices, onJump, currentProgress }) {
   return (
     <div className="flex items-center justify-center gap-1.5 py-1">
       {CYCLE.map((seg, i) => {
         const done = completedIndices.has(i)
         const cur  = i === segIdx
         const dim  = !done && !cur
-
-        const base = {
-          cursor: 'pointer',
-          background: dim ? 'rgba(255,255,255,0.13)' : seg.color,
-          boxShadow: cur ? `0 0 7px ${seg.color}` : 'none',
-          opacity: dim ? 0.4 : 1,
-          transition: 'all 0.25s',
-        }
+        // fill fraction: 1 if done, actual progress if current, 0 if future
+        const fill = done ? 1 : cur ? currentProgress : 0
 
         if (seg.type === 'short') {
           return (
-            <div key={i} onClick={() => onJump(i)} title={seg.label}
-              style={{ ...base, width: 7, height: 7, borderRadius: '50%' }}
+            <div
+              key={i} onClick={() => onJump(i)} title={seg.label}
+              className={cur && fill > 0 ? 'animate-pulse' : ''}
+              style={{
+                width: 7, height: 7, borderRadius: '50%', cursor: 'pointer',
+                background: fill > 0 ? seg.color : 'rgba(255,255,255,0.13)',
+                boxShadow: cur ? `0 0 5px ${seg.color}` : 'none',
+                opacity: dim ? 0.4 : 1,
+                transition: 'all 0.25s',
+              }}
             />
           )
         }
-        if (seg.type === 'long') {
-          return (
-            <div key={i} onClick={() => onJump(i)} title={seg.label}
-              style={{ ...base, width: 44, height: 8, borderRadius: 4 }}
-            />
-          )
-        }
-        // work
+
+        const w = seg.type === 'long' ? 44 : 22
+        const brad = seg.type === 'long' ? 4 : 3
+
         return (
-          <div key={i} onClick={() => onJump(i)} title={seg.label}
-            style={{ ...base, width: 22, height: 8, borderRadius: 3 }}
-          />
+          <div
+            key={i} onClick={() => onJump(i)} title={seg.label}
+            style={{
+              position: 'relative', overflow: 'hidden',
+              width: w, height: 8, borderRadius: brad, cursor: 'pointer',
+              background: 'rgba(255,255,255,0.13)',
+              boxShadow: cur && fill > 0 ? `0 0 6px ${seg.color}` : 'none',
+              opacity: dim ? 0.4 : 1,
+              transition: 'opacity 0.25s, box-shadow 0.25s',
+            }}
+          >
+            <div style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0,
+              width: `${fill * 100}%`,
+              background: seg.color,
+              borderRadius: brad,
+              transition: cur ? 'width 1s linear' : 'none',
+            }} />
+          </div>
         )
       })}
     </div>
@@ -60,45 +74,56 @@ function CycleIndicator({ segIdx, completedIndices, onJump }) {
 // ─── Pomodoro-Timer ───────────────────────────────────────────────────────────
 
 function PomodoroTimer({ onSessionComplete }) {
-  const [segIdx, setSegIdx]                   = useState(0)
-  const [seconds, setSeconds]                 = useState(CYCLE[0].minutes * 60)
-  const [running, setRunning]                 = useState(false)
-  const [completedIndices, setCompletedIndices] = useState(new Set())
-  const [totalPomodoros, setTotalPomodoros]   = useState(0)
-  const [sessionTitle, setSessionTitle]       = useState('')
+  const [segIdx, setSegIdx]                         = useState(0)
+  const [seconds, setSeconds]                       = useState(CYCLE[0].minutes * 60)
+  const [running, setRunning]                       = useState(false)
+  const [completedIndices, setCompletedIndices]     = useState(new Set())
+  const [totalPomodoros, setTotalPomodoros]         = useState(0)
+  const [sessionTitle, setSessionTitle]             = useState('')
+  const [sessionFocusSeconds, setSessionFocusSeconds] = useState(0)
+  const [hasStarted, setHasStarted]                 = useState(false)
 
-  const intervalRef        = useRef(null)
-  const breakAutoStartRef  = useRef(null)
+  const intervalRef       = useRef(null)
+  const breakAutoStartRef = useRef(null)
 
-  // Refs so effects always read fresh values without needing them as deps
-  const segIdxRef          = useRef(segIdx)
-  segIdxRef.current        = segIdx
-  const sessionTitleRef    = useRef(sessionTitle)
-  sessionTitleRef.current  = sessionTitle
-  const onCompleteRef      = useRef(onSessionComplete)
-  onCompleteRef.current    = onSessionComplete
+  // Refs for fresh values inside effects/callbacks
+  const segIdxRef         = useRef(segIdx)
+  segIdxRef.current       = segIdx
+  const sessionTitleRef   = useRef(sessionTitle)
+  sessionTitleRef.current = sessionTitle
+  const onCompleteRef     = useRef(onSessionComplete)
+  onCompleteRef.current   = onSessionComplete
+  const segTypeRef        = useRef(CYCLE[segIdx].type)
+  segTypeRef.current      = CYCLE[segIdx].type
 
   const seg   = CYCLE[segIdx]
   const total = seg.minutes * 60
-  const pct   = ((total - seconds) / total) * 100
+  const pct   = ((total - seconds) / total)   // 0–1
   const r     = 70
   const circ  = 2 * Math.PI * r
-  const offset = circ - (pct / 100) * circ
+  const offset = circ - pct * circ
 
-  // Ticker
+  // Track hasStarted whenever timer runs
+  useEffect(() => {
+    if (running) setHasStarted(true)
+  }, [running])
+
+  // Ticker — also accumulates focus seconds for work segments
   useEffect(() => {
     if (running) {
-      intervalRef.current = setInterval(
-        () => setSeconds(s => (s > 0 ? s - 1 : 0)),
-        1000
-      )
+      intervalRef.current = setInterval(() => {
+        setSeconds(s => (s > 0 ? s - 1 : 0))
+        if (segTypeRef.current === 'work') {
+          setSessionFocusSeconds(fs => fs + 1)
+        }
+      }, 1000)
     } else {
       clearInterval(intervalRef.current)
     }
     return () => clearInterval(intervalRef.current)
   }, [running])
 
-  // Completion detection — fires whenever seconds or running changes
+  // Completion detection
   useEffect(() => {
     if (seconds !== 0 || !running) return
 
@@ -110,22 +135,19 @@ function PomodoroTimer({ onSessionComplete }) {
     const curSeg  = CYCLE[curIdx]
     const nextIdx = (curIdx + 1) % CYCLE.length
 
-    // Mark segment completed; reset set on new cycle
     setCompletedIndices(prev =>
       nextIdx === 0 ? new Set() : new Set([...prev, curIdx])
     )
 
-    // Auto-save completed focus sessions
     if (curSeg.type === 'work') {
       onCompleteRef.current(sessionTitleRef.current.trim() || 'Pomodoro Session')
       setTotalPomodoros(n => n + 1)
+      setSessionFocusSeconds(0)  // consumed by auto-save
     }
 
-    // Advance to next segment
     setSegIdx(nextIdx)
     setSeconds(CYCLE[nextIdx].minutes * 60)
 
-    // Auto-start breaks; focus waits for user
     if (curSeg.type === 'work') {
       breakAutoStartRef.current = setTimeout(() => setRunning(true), 600)
     }
@@ -137,6 +159,8 @@ function PomodoroTimer({ onSessionComplete }) {
     clearTimeout(breakAutoStartRef.current)
   }, [])
 
+  // ── Actions ──
+
   const jumpToSegment = (idx) => {
     clearTimeout(breakAutoStartRef.current)
     setSegIdx(idx)
@@ -144,18 +168,38 @@ function PomodoroTimer({ onSessionComplete }) {
     setRunning(false)
   }
 
+  const skipToNext = () => jumpToSegment((segIdxRef.current + 1) % CYCLE.length)
+
   const reset = () => {
     clearTimeout(breakAutoStartRef.current)
     setSeconds(CYCLE[segIdxRef.current].minutes * 60)
     setRunning(false)
   }
 
+  const resetAll = () => {
+    clearTimeout(breakAutoStartRef.current)
+    clearInterval(intervalRef.current)
+    setSegIdx(0)
+    setSeconds(CYCLE[0].minutes * 60)
+    setRunning(false)
+    setCompletedIndices(new Set())
+    setSessionFocusSeconds(0)
+    setHasStarted(false)
+  }
+
+  const finishEarly = () => {
+    const title = sessionTitleRef.current.trim() || 'Pomodoro Session'
+    onCompleteRef.current(title, sessionFocusSeconds)
+    resetAll()
+  }
+
   const mins = String(Math.floor(seconds / 60)).padStart(2, '0')
   const secs = String(seconds % 60).padStart(2, '0')
+  const focusMinutesElapsed = Math.max(1, Math.round(sessionFocusSeconds / 60))
 
   return (
     <div className="space-y-4">
-      {/* Session title — used for auto-save */}
+      {/* Session title */}
       <input
         value={sessionTitle}
         onChange={e => setSessionTitle(e.target.value)}
@@ -183,17 +227,19 @@ function PomodoroTimer({ onSessionComplete }) {
         </div>
       </div>
 
-      {/* Cycle progress — click any segment to jump */}
+      {/* Cycle progress indicator */}
       <CycleIndicator
         segIdx={segIdx}
         completedIndices={completedIndices}
         onJump={jumpToSegment}
+        currentProgress={pct}
       />
 
       {/* Controls */}
       <div className="flex gap-3 justify-center">
         <button
           onClick={reset}
+          title="Segment zurücksetzen"
           className="w-11 h-11 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
         >
           <RotateCcw size={16} />
@@ -206,7 +252,28 @@ function PomodoroTimer({ onSessionComplete }) {
           {running ? <Pause size={16} /> : <Play size={16} />}
           {running ? 'Pause' : 'Start'}
         </button>
+        <button
+          onClick={skipToNext}
+          title="Überspringen"
+          className="w-11 h-11 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
+        >
+          <SkipForward size={16} />
+        </button>
       </div>
+
+      {/* Finish early */}
+      {hasStarted && (
+        <button
+          onClick={finishEarly}
+          className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-white/5 border border-white/8 text-slate-300 hover:bg-white/10 hover:border-white/15 text-sm transition-all"
+        >
+          <CheckCircle size={14} className="text-cyan-400" />
+          Session abschließen
+          {sessionFocusSeconds > 0 && (
+            <span className="text-xs text-slate-500">({focusMinutesElapsed} Min)</span>
+          )}
+        </button>
+      )}
 
       <p className="text-center text-xs text-slate-500">
         Abgeschlossene Pomodoros heute:{' '}
@@ -235,14 +302,17 @@ export default function Focus() {
     setShowForm(false)
   }
 
-  const handleAutoSave = (title) => {
+  // Called by timer: natural completion passes no elapsedSeconds, early finish passes actual seconds
+  const handleAutoSave = (title, elapsedSeconds) => {
+    const isEarly = elapsedSeconds !== undefined
     addFocusSession({
       title,
       description: '',
       productivity: 4,
-      duration: 25,
+      duration: isEarly ? Math.max(1, Math.round(elapsedSeconds / 60)) : 25,
       technique: 'Pomodoro',
       date: new Date().toISOString().split('T')[0],
+      ...(isEarly && { earlyFinish: true }),
     })
   }
 
@@ -326,9 +396,14 @@ export default function Focus() {
           {state.focusSessions.map(s => (
             <div key={s.id} className="flex items-start justify-between py-3 border-b border-white/5 last:border-0">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-0.5">
+                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                   <p className="text-sm font-semibold text-white">{s.title}</p>
                   <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400">{s.technique}</span>
+                  {s.earlyFinish && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                      Vorzeitig beendet
+                    </span>
+                  )}
                 </div>
                 {s.description && <p className="text-xs text-slate-400">{s.description}</p>}
                 <p className="text-xs text-slate-500 mt-1">{s.date} · {s.duration} Min</p>
