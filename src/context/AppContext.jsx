@@ -62,6 +62,15 @@ export function AppProvider({ children }) {
   const addFocusSession = (session) =>
     setState(s => ({ ...s, focusSessions: [{ ...session, id: Date.now() }, ...s.focusSessions] }))
 
+  const updateFocusSession = (id, updates) =>
+    setState(s => ({
+      ...s,
+      focusSessions: s.focusSessions.map(f => f.id === id ? { ...f, ...updates } : f),
+    }))
+
+  const deleteFocusSession = (id) =>
+    setState(s => ({ ...s, focusSessions: s.focusSessions.filter(f => f.id !== id) }))
+
   const addMovementEntry = (entry) =>
     setState(s => ({ ...s, movementLog: [...s.movementLog, entry] }))
 
@@ -69,7 +78,7 @@ export function AppProvider({ children }) {
     setState(s => ({ ...s, journalEntries: [{ ...entry, id: Date.now() }, ...s.journalEntries] }))
 
   return (
-    <AppContext.Provider value={{ state, addSleepEntry, upsertSleepEntry, deleteSleepEntry, addFocusSession, addMovementEntry, addJournalEntry }}>
+    <AppContext.Provider value={{ state, addSleepEntry, upsertSleepEntry, deleteSleepEntry, addFocusSession, updateFocusSession, deleteFocusSession, addMovementEntry, addJournalEntry }}>
       {children}
     </AppContext.Provider>
   )

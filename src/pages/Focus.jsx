@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../context/AppContext'
-import { Target, Plus, Play, Pause, RotateCcw, Timer, SkipForward, CheckCircle } from 'lucide-react'
+import { Target, Plus, Play, Pause, RotateCcw, Timer, SkipForward, CheckCircle, Pencil } from 'lucide-react'
 
 // Full 8-segment pomodoro cycle: focus × 4, short break × 3, long break × 1
 const CYCLE = [
@@ -14,6 +14,27 @@ const CYCLE = [
   { type: 'long',  label: 'Lange Pause', minutes: 30, color: '#6366f1' },
 ]
 
+const productivityLabels = ['', 'Sehr schlecht', 'Schlecht', 'OK', 'Gut', 'Ausgezeichnet']
+const techniques = ['Pomodoro', 'Zeitblock', 'Deep Work', 'Flowstate', 'Sonstige']
+
+// ─── Produktivitäts-Balken (wiederverwendbar) ────────────────────────────────
+
+function ProductivityBars({ value, onChange, size = 'md' }) {
+  const h = size === 'lg' ? 'h-3.5' : 'h-2.5'
+  return (
+    <div className="flex gap-1.5">
+      {[1,2,3,4,5].map(n => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n)}
+          className={`flex-1 ${h} rounded-full transition-all ${value && n <= value ? 'bg-cyan-500' : 'bg-white/10 hover:bg-white/15'}`}
+        />
+      ))}
+    </div>
+  )
+}
+
 // ─── Zyklus-Fortschrittsanzeige ───────────────────────────────────────────────
 
 function CycleIndicator({ segIdx, completedIndices, onJump, currentProgress }) {
@@ -23,7 +44,6 @@ function CycleIndicator({ segIdx, completedIndices, onJump, currentProgress }) {
         const done = completedIndices.has(i)
         const cur  = i === segIdx
         const dim  = !done && !cur
-        // fill fraction: 1 if done, actual progress if current, 0 if future
         const fill = done ? 1 : cur ? currentProgress : 0
 
         if (seg.type === 'short') {
@@ -86,29 +106,20 @@ function PomodoroTimer({ onSessionComplete }) {
   const intervalRef       = useRef(null)
   const breakAutoStartRef = useRef(null)
 
-  // Refs for fresh values inside effects/callbacks
-  const segIdxRef         = useRef(segIdx)
-  segIdxRef.current       = segIdx
-  const sessionTitleRef   = useRef(sessionTitle)
-  sessionTitleRef.current = sessionTitle
-  const onCompleteRef     = useRef(onSessionComplete)
-  onCompleteRef.current   = onSessionComplete
-  const segTypeRef        = useRef(CYCLE[segIdx].type)
-  segTypeRef.current      = CYCLE[segIdx].type
+  const segIdxRef         = useRef(segIdx);         segIdxRef.current       = segIdx
+  const sessionTitleRef   = useRef(sessionTitle);   sessionTitleRef.current = sessionTitle
+  const onCompleteRef     = useRef(onSessionComplete); onCompleteRef.current = onSessionComplete
+  const segTypeRef        = useRef(CYCLE[segIdx].type); segTypeRef.current = CYCLE[segIdx].type
 
   const seg   = CYCLE[segIdx]
   const total = seg.minutes * 60
-  const pct   = ((total - seconds) / total)   // 0–1
+  const pct   = ((total - seconds) / total)
   const r     = 70
   const circ  = 2 * Math.PI * r
   const offset = circ - pct * circ
 
-  // Track hasStarted whenever timer runs
-  useEffect(() => {
-    if (running) setHasStarted(true)
-  }, [running])
+  useEffect(() => { if (running) setHasStarted(true) }, [running])
 
-  // Ticker — also accumulates focus seconds for work segments
   useEffect(() => {
     if (running) {
       intervalRef.current = setInterval(() => {
@@ -123,7 +134,6 @@ function PomodoroTimer({ onSessionComplete }) {
     return () => clearInterval(intervalRef.current)
   }, [running])
 
-  // Completion detection
   useEffect(() => {
     if (seconds !== 0 || !running) return
 
@@ -142,7 +152,7 @@ function PomodoroTimer({ onSessionComplete }) {
     if (curSeg.type === 'work') {
       onCompleteRef.current(sessionTitleRef.current.trim() || 'Pomodoro Session')
       setTotalPomodoros(n => n + 1)
-      setSessionFocusSeconds(0)  // consumed by auto-save
+      setSessionFocusSeconds(0)
     }
 
     setSegIdx(nextIdx)
@@ -153,13 +163,10 @@ function PomodoroTimer({ onSessionComplete }) {
     }
   }, [seconds, running])
 
-  // Cleanup on unmount
   useEffect(() => () => {
     clearInterval(intervalRef.current)
     clearTimeout(breakAutoStartRef.current)
   }, [])
-
-  // ── Actions ──
 
   const jumpToSegment = (idx) => {
     clearTimeout(breakAutoStartRef.current)
@@ -199,7 +206,6 @@ function PomodoroTimer({ onSessionComplete }) {
 
   return (
     <div className="space-y-4">
-      {/* Session title */}
       <input
         value={sessionTitle}
         onChange={e => setSessionTitle(e.target.value)}
@@ -207,7 +213,6 @@ function PomodoroTimer({ onSessionComplete }) {
         className="w-full rounded-xl bg-white/5 border border-white/10 text-white text-sm p-2.5 focus:outline-none focus:border-cyan-500/50 placeholder:text-slate-600"
       />
 
-      {/* Ring timer */}
       <div className="flex justify-center">
         <div className="relative">
           <svg width={170} height={170} style={{ transform: 'rotate(-90deg)' }}>
@@ -227,7 +232,6 @@ function PomodoroTimer({ onSessionComplete }) {
         </div>
       </div>
 
-      {/* Cycle progress indicator */}
       <CycleIndicator
         segIdx={segIdx}
         completedIndices={completedIndices}
@@ -235,7 +239,6 @@ function PomodoroTimer({ onSessionComplete }) {
         currentProgress={pct}
       />
 
-      {/* Controls */}
       <div className="flex gap-3 justify-center">
         <button
           onClick={reset}
@@ -261,7 +264,6 @@ function PomodoroTimer({ onSessionComplete }) {
         </button>
       </div>
 
-      {/* Finish early */}
       {hasStarted && (
         <button
           onClick={finishEarly}
@@ -283,37 +285,208 @@ function PomodoroTimer({ onSessionComplete }) {
   )
 }
 
+// ─── Produktivitäts-Modal nach Pomodoro ──────────────────────────────────────
+
+function ProductivityModal({ session, onConfirm, onSkip }) {
+  const [rating, setRating] = useState(null)
+
+  if (!session) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      onClick={onSkip}
+    >
+      <div
+        className="card p-6 w-full max-w-sm space-y-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div>
+          <h3 className="text-white font-semibold text-lg">Wie produktiv warst du?</h3>
+          <p className="text-xs text-slate-400 mt-1 truncate">{session.title}</p>
+        </div>
+
+        <ProductivityBars value={rating} onChange={setRating} size="lg" />
+        <p className="text-center text-xs h-4">
+          {rating
+            ? <span className="text-cyan-400 font-medium">{productivityLabels[rating]}</span>
+            : <span className="text-slate-600">Wähle eine Bewertung</span>}
+        </p>
+
+        <button
+          onClick={() => onConfirm(rating)}
+          disabled={!rating}
+          className="w-full py-2.5 rounded-xl gradient-cyan text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Speichern
+        </button>
+        <button
+          onClick={onSkip}
+          className="w-full text-xs text-slate-500 hover:text-slate-300 transition-colors"
+        >
+          Überspringen
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Bearbeitungs-Formular für Sessions ──────────────────────────────────────
+
+function SessionEditForm({ form, onChange, onSave, onCancel, onDelete }) {
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+
+  return (
+    <div className="p-4 rounded-xl border border-cyan-500/30 bg-cyan-500/5 space-y-3">
+      <input
+        value={form.title}
+        onChange={e => onChange({ ...form, title: e.target.value })}
+        placeholder="Titel"
+        className="w-full rounded-xl bg-white/5 border border-white/10 text-white text-sm p-2.5 focus:outline-none focus:border-cyan-500/50"
+      />
+      <textarea
+        value={form.description || ''}
+        onChange={e => onChange({ ...form, description: e.target.value })}
+        placeholder="Beschreibung (optional)"
+        className="w-full h-16 rounded-xl bg-white/5 border border-white/10 text-white text-sm p-2.5 resize-none focus:outline-none focus:border-cyan-500/50"
+      />
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">Datum</label>
+          <input
+            type="date"
+            value={form.date}
+            onChange={e => onChange({ ...form, date: e.target.value })}
+            className="w-full rounded-xl bg-white/5 border border-white/10 text-white text-sm p-2 focus:outline-none focus:border-cyan-500/50"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">Dauer (Min)</label>
+          <input
+            type="number" min={1} max={480}
+            value={form.duration}
+            onChange={e => onChange({ ...form, duration: +e.target.value })}
+            className="w-full rounded-xl bg-white/5 border border-white/10 text-white text-sm p-2 focus:outline-none focus:border-cyan-500/50"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs text-slate-400 block mb-1">Tag</label>
+        <select
+          value={form.technique}
+          onChange={e => onChange({ ...form, technique: e.target.value })}
+          className="w-full rounded-xl bg-[#1a1a2e] border border-white/10 text-white text-sm p-2.5 focus:outline-none focus:border-cyan-500/50"
+        >
+          {techniques.map(t => <option key={t}>{t}</option>)}
+        </select>
+      </div>
+
+      <div>
+        <label className="text-xs text-slate-400 block mb-1.5">
+          Produktivität:{' '}
+          <span className="text-white">
+            {form.productivity ? productivityLabels[form.productivity] : 'Nicht bewertet'}
+          </span>
+        </label>
+        <ProductivityBars
+          value={form.productivity}
+          onChange={n => onChange({ ...form, productivity: n })}
+        />
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        {deleteConfirm ? (
+          <>
+            <button
+              onClick={() => { onDelete(); setDeleteConfirm(false) }}
+              className="py-2 px-3 rounded-xl bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 text-sm font-medium border border-rose-500/30"
+            >
+              Wirklich löschen?
+            </button>
+            <button
+              onClick={() => setDeleteConfirm(false)}
+              className="py-2 px-3 rounded-xl bg-white/5 text-slate-400 text-sm"
+            >
+              Nein
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setDeleteConfirm(true)}
+            className="py-2 px-3 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-sm border border-rose-500/20 transition-colors"
+          >
+            Löschen
+          </button>
+        )}
+        <button onClick={onCancel} className="flex-1 py-2 rounded-xl bg-white/5 text-slate-300 text-sm hover:bg-white/10">
+          Abbrechen
+        </button>
+        <button onClick={onSave} className="flex-1 py-2 rounded-xl gradient-cyan text-white text-sm font-medium">
+          Speichern
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
-const productivityLabels = ['', 'Sehr schlecht', 'Schlecht', 'OK', 'Gut', 'Ausgezeichnet']
-const techniques = ['Pomodoro', 'Zeitblock', 'Deep Work', 'Flowstate', 'Sonstige']
-
 export default function Focus() {
-  const { state, addFocusSession } = useApp()
+  const { state, addFocusSession, updateFocusSession, deleteFocusSession } = useApp()
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
-    title: '', description: '', productivity: 4, duration: 25, technique: 'Pomodoro',
+    title: '', description: '', productivity: null, duration: 25, technique: 'Pomodoro',
   })
+  const [pendingSession, setPendingSession] = useState(null)
+  const [editingId, setEditingId]           = useState(null)
+  const [editForm, setEditForm]             = useState(null)
 
   const handleAdd = () => {
     if (!form.title) return
     addFocusSession({ ...form, date: new Date().toISOString().split('T')[0] })
-    setForm({ title: '', description: '', productivity: 4, duration: 25, technique: 'Pomodoro' })
+    setForm({ title: '', description: '', productivity: null, duration: 25, technique: 'Pomodoro' })
     setShowForm(false)
   }
 
-  // Called by timer: natural completion passes no elapsedSeconds, early finish passes actual seconds
+  // Called by timer: natural completion (no elapsedSeconds) or early finish (with seconds)
   const handleAutoSave = (title, elapsedSeconds) => {
     const isEarly = elapsedSeconds !== undefined
-    addFocusSession({
+    setPendingSession({
       title,
       description: '',
-      productivity: 4,
       duration: isEarly ? Math.max(1, Math.round(elapsedSeconds / 60)) : 25,
       technique: 'Pomodoro',
       date: new Date().toISOString().split('T')[0],
       ...(isEarly && { earlyFinish: true }),
     })
+  }
+
+  const saveWithRating = (rating) => {
+    addFocusSession({ ...pendingSession, productivity: rating })
+    setPendingSession(null)
+  }
+
+  const skipRating = () => {
+    addFocusSession({ ...pendingSession, productivity: null })
+    setPendingSession(null)
+  }
+
+  const startEdit = (s) => {
+    setEditingId(s.id)
+    setEditForm({ ...s })
+  }
+  const cancelEdit = () => { setEditingId(null); setEditForm(null) }
+  const saveEdit = () => {
+    if (!editForm.title) return
+    const { id, ...updates } = editForm
+    updateFocusSession(id, updates)
+    cancelEdit()
+  }
+  const deleteEdit = () => {
+    deleteFocusSession(editingId)
+    cancelEdit()
   }
 
   return (
@@ -376,15 +549,15 @@ export default function Focus() {
             </div>
             <div>
               <label className="text-xs text-slate-400 block mb-2">
-                Produktivität: <span className="text-white">{productivityLabels[form.productivity]}</span>
+                Produktivität:{' '}
+                <span className="text-white">
+                  {form.productivity ? productivityLabels[form.productivity] : 'Nicht bewertet'}
+                </span>
               </label>
-              <div className="flex gap-1.5">
-                {[1,2,3,4,5].map(n => (
-                  <button key={n} onClick={() => setForm(f => ({ ...f, productivity: n }))}
-                    className={`flex-1 h-2.5 rounded-full transition-all ${n <= form.productivity ? 'bg-cyan-500' : 'bg-white/10'}`}
-                  />
-                ))}
-              </div>
+              <ProductivityBars
+                value={form.productivity}
+                onChange={n => setForm(f => ({ ...f, productivity: n }))}
+              />
             </div>
             <button onClick={handleAdd} className="w-full py-2 rounded-xl gradient-cyan text-white text-sm font-medium">
               Speichern
@@ -394,29 +567,58 @@ export default function Focus() {
 
         <div className="space-y-3">
           {state.focusSessions.map(s => (
-            <div key={s.id} className="flex items-start justify-between py-3 border-b border-white/5 last:border-0">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                  <p className="text-sm font-semibold text-white">{s.title}</p>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400">{s.technique}</span>
-                  {s.earlyFinish && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20">
-                      Vorzeitig beendet
-                    </span>
-                  )}
+            editingId === s.id ? (
+              <SessionEditForm
+                key={s.id}
+                form={editForm}
+                onChange={setEditForm}
+                onSave={saveEdit}
+                onCancel={cancelEdit}
+                onDelete={deleteEdit}
+              />
+            ) : (
+              <div key={s.id} className="flex items-start justify-between py-3 border-b border-white/5 last:border-0">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                    <p className="text-sm font-semibold text-white">{s.title}</p>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400">{s.technique}</span>
+                    {s.earlyFinish && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                        Vorzeitig beendet
+                      </span>
+                    )}
+                  </div>
+                  {s.description && <p className="text-xs text-slate-400">{s.description}</p>}
+                  <p className="text-xs text-slate-500 mt-1">{s.date} · {s.duration} Min</p>
                 </div>
-                {s.description && <p className="text-xs text-slate-400">{s.description}</p>}
-                <p className="text-xs text-slate-500 mt-1">{s.date} · {s.duration} Min</p>
+                <div className="flex items-center gap-2 ml-3 mt-0.5">
+                  <div className="flex gap-0.5" title={s.productivity ? `Produktivität: ${s.productivity}/5` : 'Nicht bewertet'}>
+                    {[1,2,3,4,5].map(n => (
+                      <div
+                        key={n}
+                        className={`w-2 h-5 rounded-sm ${s.productivity && n <= s.productivity ? 'bg-cyan-500' : 'bg-white/10'}`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => startEdit(s)}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                    title="Bearbeiten"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-0.5 ml-3 mt-0.5">
-                {[1,2,3,4,5].map(n => (
-                  <div key={n} className={`w-2 h-5 rounded-sm ${n <= s.productivity ? 'bg-cyan-500' : 'bg-white/10'}`} />
-                ))}
-              </div>
-            </div>
+            )
           ))}
         </div>
       </div>
+
+      <ProductivityModal
+        session={pendingSession}
+        onConfirm={saveWithRating}
+        onSkip={skipRating}
+      />
     </div>
   )
 }
