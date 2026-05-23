@@ -8,6 +8,9 @@ import {
   transcribeHandwriting, getApiKey, setApiKey as saveApiKey,
   maskApiKey, fileToDataUrl, ERR_NO_KEY,
 } from '../lib/anthropic'
+import SpazierganModal    from '../components/modals/SpazierganModal'
+import MeditationModal    from '../components/modals/MeditationModal'
+import MorgenprogrammModal from '../components/modals/MorgenprogrammModal'
 
 // ─── Image Handler Hook ──────────────────────────────────────────────────────
 // Returns all state + handlers needed for the photo import feature.
@@ -589,6 +592,7 @@ const breathingPatterns = [
 export default function Stress() {
   const { state, addJournalEntry, updateJournalEntry, deleteJournalEntry, addAvailableTag } = useApp()
   const [activeBreath, setActiveBreath] = useState(0)
+  const [activeModal, setActiveModal]   = useState(null) // 'spaziergang' | 'meditation' | 'morgenprogramm'
   const [showJournal, setShowJournal]   = useState(false)
   const [addForm, setAddForm]           = useState({ mood: 2, text: '', tags: [] })
   const addImages                       = useImageHandler()
@@ -645,14 +649,18 @@ export default function Stress() {
         <BreathingExercise key={activeBreath} pattern={breathingPatterns[activeBreath]} />
       </div>
 
-      {/* Quick actions */}
+      {/* Quick actions — clickable tiles */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
-          { emoji: '🚶', title: 'Spaziergang',    desc: '20 Min in der Natur, Cortisol sinkt messbar',        color: 'text-green-400',  bg: 'bg-green-500/10' },
-          { emoji: '🧘', title: 'Kurz-Meditation', desc: '5 Min Körperscan oder Stille-Meditation',            color: 'text-violet-400', bg: 'bg-violet-500/10' },
-          { emoji: '☀️', title: 'Morgenprogramm',  desc: 'Wasser, Sonnenlicht, Bewegung – startet den Tag',  color: 'text-amber-400',  bg: 'bg-amber-500/10' },
-        ].map(({ emoji, title, desc, color, bg }) => (
-          <div key={title} className={`card p-4 ${bg} border-none`}>
+          { emoji: '🚶', title: 'Spaziergang',    desc: '20 Min in der Natur, Cortisol sinkt messbar',       color: 'text-green-400',  bg: 'bg-green-500/10',  modal: 'spaziergang'    },
+          { emoji: '🧘', title: 'Kurz-Meditation', desc: '5 Min Körperscan oder Stille-Meditation',           color: 'text-violet-400', bg: 'bg-violet-500/10', modal: 'meditation'     },
+          { emoji: '☀️', title: 'Morgenprogramm',  desc: 'Wasser, Sonnenlicht, Bewegung – startet den Tag',  color: 'text-amber-400',  bg: 'bg-amber-500/10',  modal: 'morgenprogramm' },
+        ].map(({ emoji, title, desc, color, bg, modal }) => (
+          <div
+            key={title}
+            onClick={() => setActiveModal(modal)}
+            className={`card p-4 ${bg} border border-transparent hover:border-white/15 cursor-pointer transition-all hover:brightness-110 active:scale-[0.98]`}
+          >
             <div className="text-2xl mb-2">{emoji}</div>
             <p className={`text-sm font-semibold ${color}`}>{title}</p>
             <p className="text-xs text-slate-400 mt-1">{desc}</p>
@@ -780,6 +788,11 @@ export default function Stress() {
           })}
         </div>
       </div>
+
+      {/* Activity modals */}
+      {activeModal === 'spaziergang'    && <SpazierganModal    onClose={() => setActiveModal(null)} />}
+      {activeModal === 'meditation'     && <MeditationModal    onClose={() => setActiveModal(null)} />}
+      {activeModal === 'morgenprogramm' && <MorgenprogrammModal onClose={() => setActiveModal(null)} />}
 
       {/* Lightbox */}
       {lightboxImage && (

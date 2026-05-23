@@ -26,6 +26,12 @@ const initialState = {
     { id: 2, date: '2026-05-20', mood: 3, text: 'Ausgeruht und energiegeladen. Meditation am Morgen hat geholfen.', tags: ['entspannt', 'meditation'] },
   ],
   availableTags: ['produktiv', 'fokus', 'entspannt', 'meditation'],
+  morningProgram: {
+    items: [],
+    wakeTime: '06:30',
+    reminderEnabled: false,
+    reminderTime: '06:30',
+  },
   scores: {
     memory: 72,
     attention: 65,
@@ -87,6 +93,9 @@ export function AppProvider({ children }) {
   const deleteJournalEntry = (id) =>
     setState(s => ({ ...s, journalEntries: s.journalEntries.filter(e => e.id !== id) }))
 
+  const saveMorningProgram = (updates) =>
+    setState(s => ({ ...s, morningProgram: { ...s.morningProgram, ...updates } }))
+
   const addAvailableTag = (tag) =>
     setState(s => ({
       ...s,
@@ -100,7 +109,7 @@ export function AppProvider({ children }) {
       addFocusSession, updateFocusSession, deleteFocusSession,
       addMovementEntry,
       addJournalEntry, updateJournalEntry, deleteJournalEntry,
-      addAvailableTag,
+      addAvailableTag, saveMorningProgram,
     }}>
       {children}
     </AppContext.Provider>
