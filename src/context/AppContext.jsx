@@ -22,9 +22,10 @@ const initialState = {
     { date: '2026-05-20', steps: 9100, sport: 'Krafttraining 45min', relaxation: '' },
   ],
   journalEntries: [
-    { id: 1, date: '2026-05-19', mood: 4, text: 'Guter Tag, viel geschafft. Fokus war heute sehr gut.', tags: ['produktiv', 'fokus'] },
-    { id: 2, date: '2026-05-20', mood: 5, text: 'Ausgeruht und energiegeladen. Meditation am Morgen hat geholfen.', tags: ['entspannt', 'meditation'] },
+    { id: 1, date: '2026-05-19', mood: 3, text: 'Guter Tag, viel geschafft. Fokus war heute sehr gut.', tags: ['produktiv', 'fokus'] },
+    { id: 2, date: '2026-05-20', mood: 3, text: 'Ausgeruht und energiegeladen. Meditation am Morgen hat geholfen.', tags: ['entspannt', 'meditation'] },
   ],
+  availableTags: ['produktiv', 'fokus', 'entspannt', 'meditation'],
   scores: {
     memory: 72,
     attention: 65,
@@ -77,8 +78,30 @@ export function AppProvider({ children }) {
   const addJournalEntry = (entry) =>
     setState(s => ({ ...s, journalEntries: [{ ...entry, id: Date.now() }, ...s.journalEntries] }))
 
+  const updateJournalEntry = (id, updates) =>
+    setState(s => ({
+      ...s,
+      journalEntries: s.journalEntries.map(e => e.id === id ? { ...e, ...updates } : e),
+    }))
+
+  const deleteJournalEntry = (id) =>
+    setState(s => ({ ...s, journalEntries: s.journalEntries.filter(e => e.id !== id) }))
+
+  const addAvailableTag = (tag) =>
+    setState(s => ({
+      ...s,
+      availableTags: s.availableTags.includes(tag) ? s.availableTags : [...s.availableTags, tag],
+    }))
+
   return (
-    <AppContext.Provider value={{ state, addSleepEntry, upsertSleepEntry, deleteSleepEntry, addFocusSession, updateFocusSession, deleteFocusSession, addMovementEntry, addJournalEntry }}>
+    <AppContext.Provider value={{
+      state,
+      addSleepEntry, upsertSleepEntry, deleteSleepEntry,
+      addFocusSession, updateFocusSession, deleteFocusSession,
+      addMovementEntry,
+      addJournalEntry, updateJournalEntry, deleteJournalEntry,
+      addAvailableTag,
+    }}>
       {children}
     </AppContext.Provider>
   )
